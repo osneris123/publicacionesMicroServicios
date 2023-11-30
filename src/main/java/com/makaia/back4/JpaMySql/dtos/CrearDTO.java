@@ -13,6 +13,7 @@ public class CrearDTO {
     public CrearDTO(String titulo, String contenido, Long usuarioId) {
         this.titulo = titulo;
         this.contenido = contenido;
+        this.usuarioId = usuarioId;
     }
 
     public String getTitulo() {
