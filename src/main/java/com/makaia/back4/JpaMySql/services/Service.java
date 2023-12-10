@@ -1,40 +1,71 @@
 package com.makaia.back4.JpaMySql.services;
 
 import com.makaia.back4.JpaMySql.dtos.CrearDTO;
-import com.makaia.back4.JpaMySql.entities.Publicacion;
-import com.makaia.back4.JpaMySql.entities.Usuario;
-import com.makaia.back4.JpaMySql.exceptions.RedSocialApiException;
-import com.makaia.back4.JpaMySql.repositories.PublicacionRepository;
-import com.makaia.back4.JpaMySql.repositories.UsuarioRepository;
+import com.makaia.back4.JpaMySql.entities.Mensaje;
+import com.makaia.back4.JpaMySql.repositories.MensajeRepository;
+import jakarta.transaction.Transactional;
+
+import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 import java.util.stream.StreamSupport;
 
-@org.springframework.stereotype.Service
+
+
 public class Service {
-    PublicacionRepository repository;
-    UsuarioRepository usuarioRepository;
+    private final AmqpTemplate amqpTemplate;
+    private final MensajeRepository mensajeRepository;
+    private final UsuarioRepository usuarioRepository;
 
     @Autowired
-    public Service(PublicacionRepository repository, UsuarioRepository usuarioRepository) {
-        this.repository = repository;
+    public Service(AmqpTemplate amqpTemplate, MensajeRepository mensajeRepository, UsuarioRepository usuarioRepository) {
+        this.amqpTemplate = amqpTemplate;
+        this.mensajeRepository = mensajeRepository;
         this.usuarioRepository = usuarioRepository;
     }
 
-    public Publicacion crear(CrearDTO dto) {
-        Usuario usuario = this.usuarioRepository
-                .findById(dto.getUsuarioId())
-                .orElseThrow(
-                        () -> new RedSocialApiException("El usuario no existe y no puede crear publicaciones"));
-        Publicacion nuevoUsuario = new Publicacion(dto.getTitulo(), dto.getContenido(), usuario);
-        return this.repository.save(nuevoUsuario);
+    @Transactional
+    public  Mensaje enviarMensaje(CrearDTO mensajeDTO) {
+        Usuario emisor = usuarioRepository.findById(mensajeDTO.getEmisorId())
+                .orElseThrow(() -> new RuntimeException("Usuario emisor no encontrado"));
+
+        Usuario receptor = usuarioRepository.findById(mensajeDTO.getReceptorId())
+                .orElseThrow(() -> new RuntimeException("Usuario receptor no encontrado"));
+
+        Mensaje mensaje = new Mensaje();
+        mensaje.setContenido(mensajeDTO.getContenido());
+        mensaje.setEmisor(emisor);
+        mensaje.setReceptor(receptor);
+
+
+        mensajeRepository.save(mensaje);
+
+        // Enviar mensaje a RabbitMQ
+        amqpTemplate.convertAndSend("m intercambiar", "clav direccion", mensajeDTO);
+
+        return mensaje;
     }
 
-    public List<Publicacion> listar() {
-        return StreamSupport
-                .stream(this.repository.findAll().spliterator(), false)
-                .toList();
+    public Mensaje listar() {
+        return (Mensaje) StreamSupport
+                .stream(this.mensajeRepository.findAll().spliterator(),false);
+
     }
+
+
+    public List<Mensaje> obtenerTodosLosMensajes() {
+        return mensajeRepository.findAll();
+    }
+
+    public Optional<Mensaje> obtenerMensajePorId(Long id) {
+        return mensajeRepository.findById(id);
+    }
+    public void eliminarMensaje(Long id) {
+        mensajeRepository.deleteById(id);
+    }
+
+
+
 }
